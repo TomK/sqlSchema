@@ -20,6 +20,7 @@ abstract class sqlSchema extends PDO {
 	private $params = array();
 	function setReturn($type,$length=-1) {
 		if (is_null($type)) { $this->hasReturn = null; return; }
+		if ($type !== PDO::PARAM_INT && $length === -1) { trigger_error('Invalid length for non integer return value.',E_USER_ERROR); }
 		$this->hasReturn = array($type,$length);
 	}
 	function &addByRef(&$var,$type=PDO::PARAM_STR,$length) {
