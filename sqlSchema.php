@@ -108,7 +108,7 @@ abstract class sqlSchema extends PDO {
         try {
         	parent::__construct( $dns, $this->username, $this->password );
         } catch (Exception $e) {
-        	echo $e->getMessage();
+        	trigger_error($e->getMessage(), E_USER_ERROR);
         	return;
         }
         
