@@ -102,14 +102,12 @@ abstract class sqlSchema extends PDO {
 		if (!$this->password)	trigger_error('Please declare protected $password', E_USER_ERROR);
 		
         $dns = $this->engine.':server='.$this->servername.";Database=".$this->dbname;
+		$this->setReturn(PDO::PARAM_INT);
         try {
-        	parent::__construct( $dns, $this->username, $this->password );
+        	parent::__construct( $dns, $this->username, $this->password,$options);
         } catch (Exception $e) {
-        	trigger_error($e->getMessage(), E_USER_ERROR);
+        	trigger_error($e->getMessage().' '.$dns, E_USER_ERROR);
         	return;
         }
-        
-		$this->setReturn(PDO::PARAM_INT);
 	}
 }
-?>
