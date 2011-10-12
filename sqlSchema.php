@@ -12,6 +12,7 @@ abstract class sqlSchema extends PDO {
 	protected $dbname		= '';
 	protected $username		= '';
 	protected $password		= '';
+	protected $engine		= 'sqlsrv';
 	
 	public $returnValue = null;
 	public $resultSets = array();
@@ -103,7 +104,6 @@ abstract class sqlSchema extends PDO {
 		if (!$this->username)	trigger_error('Please declare protected $username', E_USER_ERROR);
 		if (!$this->password)	trigger_error('Please declare protected $password', E_USER_ERROR);
 		
-        $this->engine = 'sqlsrv';
         $dns = $this->engine.':server='.$this->servername.";Database=".$this->dbname;
         try {
         	parent::__construct( $dns, $this->username, $this->password );
