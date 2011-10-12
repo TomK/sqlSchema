@@ -87,7 +87,15 @@ abstract class sqlSchema extends PDO {
 		return false;
 	}
 	
-	function __construct() {
+	function reset() {
+		$this->returnValue = null;
+		$this->resultSets = array();
+		$this->hasReturn = null;
+		$this->params = array();
+		$this->setReturn(PDO::PARAM_INT);
+	}
+	
+	function __construct($options = NULL) {
 		if (!$this->servername)	trigger_error('Please declare protected $servername', E_USER_ERROR);
 		if (!$this->dbname)		trigger_error('Please declare protected $dbname', E_USER_ERROR);
 		if (!$this->username)	trigger_error('Please declare protected $username', E_USER_ERROR);
