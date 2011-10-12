@@ -1,13 +1,5 @@
 <?php
 abstract class sqlSchema extends PDO {
-/*    protected static $__CLASS__ = __CLASS__;
-	static $singleton = array();
-	static function &getSingleton() {
-		if (isset(self::$singleton[static::$__CLASS__])) return self::$singleton[static::$__CLASS__];
-		self::$singleton[static::$__CLASS__] = new static::$__CLASS__();
-		return self::$singleton[static::$__CLASS__];
-	}*/
-
 	protected $servername	= '';
 	protected $dbname		= '';
 	protected $username		= '';
