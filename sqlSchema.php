@@ -82,7 +82,7 @@ abstract class sqlSchema extends PDO {
 		
 		$err = $stmt->errorInfo();
 		if ($err[0] !== '00000') {
-			trigger_error($err[2], E_USER_ERROR);
+			trigger_error($err[2].' ('.$fnName.')',E_USER_ERROR);
 		}
 		return false;
 	}
