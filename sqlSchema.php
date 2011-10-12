@@ -25,6 +25,7 @@ abstract class sqlSchema extends PDO {
 		return $param;
 	}
 	function &addByVal($var,$type=PDO::PARAM_STR) {
+		if (is_null($var)) $type=PDO::PARAM_NULL;
 		$param = array($var,$type,null,false);
 		$this->params[] =& $param;
 		return $param;
