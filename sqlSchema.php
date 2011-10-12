@@ -74,10 +74,7 @@ abstract class sqlSchema extends PDO {
 		$this->resultSets = array();
 		if ($stmt->execute()) {
 			do {
-				$resultSet =& $this->resultSets[];
-				while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-					$resultSet[] = $row;
-				}
+				$this->resultSets[] = $stmt->fetchAll(PDO::FETCH_ASSOC);
 			} while ($stmt->nextRowset());
 			
 			return true;
