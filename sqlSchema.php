@@ -23,7 +23,7 @@ abstract class sqlSchema extends PDO {
 	function &addByRef(&$var,$type=PDO::PARAM_STR,$length) {
 		$type = $type | PDO::PARAM_INPUT_OUTPUT;
 		if (is_string($var) && strlen($var) > $length)
-		$var = substr($var,0,$length);
+			$var = substr($var,0,$length);
 		$param = array(&$var,$type,$length,true);
 		$this->params[] =& $param;
 		return $param;
@@ -34,9 +34,15 @@ abstract class sqlSchema extends PDO {
 		$this->params[] =& $param;
 		return $param;
 	}
-	function call($fnName) {
-		$isSelect = (strtolower(substr($fnName,0,6))==='select');
-		if ($isSelect) $this->setReturn(null);
+	private $columnBindings = array();
+	function &bindColumn($column_number, &$var, $stream=false) {
+		$col = array(&$var,$stream);
+		$this->columnBindings[$column_number] =& $col;
+		return $col;
+	}
+	function call($fnName,$raw = false) {
+		$isSelect = $raw || (strtolower(substr($fnName,0,6))==='select') || (strtolower(substr($fnName,0,4))==='exec') || (strtolower(substr($fnName,0,1))==='{');
+		if ($isSelect && !$raw) $this->setReturn(null);
 		// build function call query
 
 		$paramCount = count($this->params);
@@ -56,10 +62,59 @@ abstract class sqlSchema extends PDO {
 			$qry = '{'.$qry.'}';
 		}
 
+		try {
+			if ($this->columnBindings && $this->engine == 'sqlsrv') {
+				return $this->callWithSqlSrv($qry);
+			}
+			return $this->callWithPDO($qry);
+		} catch (Exception $e) {
+			$caller = next(debug_backtrace());
+			//print_r($caller);
+			//echo $e->getMessage();
+			//echo $e->getCode();
+			//echo $caller['file'];
+			//echo $caller['line'];
+			echo $e->getMessage();
+			//throw new ErrorException($e->getMessage(), $e->getCode(), 1, $caller['file'], $caller['line'],$e);
+		}
+	}
+	private function callWithSqlSrv($qry) {
+//		$serverName = "(local)";
+		$connectionInfo = array( "UID" => $this->username, "PWD" => $this->password, "Database"=>$this->dbname);
+		$conn = sqlsrv_connect( $this->servername, $connectionInfo);
+		$params = array();
+		foreach ($this->params as $param) {
+			$params[] = &$param[0];
+		}
+
+		if (!($stmt = sqlsrv_prepare( $conn, $qry, $params))) {
+		      throw new Exception(sqlsrv_errors());
+		      return false;
+		}
+		
+		if (!sqlsrv_execute($stmt)) {
+			throw new Exception(sqlsrv_errors());
+			return false;
+		}
+		
+		if (!sqlsrv_fetch($stmt)) return false;
+		
+		foreach ($this->columnBindings as $k=>$col) {
+			if ($col[1]) $col[0] = sqlsrv_get_field($stmt, $k, SQLSRV_PHPTYPE_STREAM( $col[1]));
+			else $col[0] = sqlsrv_get_field($stmt, $k);
+		}
+		
+		// successfully created connection and executed query, return true.
+		// the user should now be calling "movenext"
+		$this->sqlsrvConnection = &$conn;
+		$this->sqlsrvStatement = &$stmt;
+		return true;
+	}
+	private function callWithPDO($qry) {
 		// get PDOStatement
 		$stmt = $this->prepare( $qry );
 		if (!$stmt)	{
-			trigger_error('Invalid query: '.$qry, E_USER_ERROR);
+			throw new Exception('Invalid query: '.$qry);
 			return false;
 		}
 
@@ -68,6 +123,7 @@ abstract class sqlSchema extends PDO {
 		$stmt->bindParam(1,&$this->returnValue,$this->hasReturn[0] | PDO::PARAM_INPUT_OUTPUT,$this->hasReturn[1]);
 
 		// add other parameters in order
+		$paramCount = count($this->params);
 		for ($i = 0,$inc = is_null($this->hasReturn)?1:2; $i < $paramCount; $i++) {
 			if ($this->params[$i][3])
 			$stmt->bindParam($i+$inc,$this->params[$i][0],$this->params[$i][1],$this->params[$i][2]);
@@ -76,20 +132,40 @@ abstract class sqlSchema extends PDO {
 		}
 
 		// execute statement
-		$this->resultSets = array();
-		if ($stmt->execute()) {
-			do {
-				$this->resultSets[] = $stmt->fetchAll(PDO::FETCH_ASSOC);
-			} while ($stmt->nextRowset());
-				
-			return true;
-		}
-
+		$stmt->execute();
+		
 		$err = $stmt->errorInfo();
-		if ($err[0] !== '00000') {
-			trigger_error($err[2].' ('.$fnName.')',E_USER_ERROR);
+
+		if ($err && $err[0] !== '00000') {
+			throw new Exception($err[2],$err[1]);
+			return false;
 		}
-		return false;
+		
+		$this->resultSets = array();
+		do {
+			try {
+				$this->resultSets[] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+			} catch (Exception $e) {}
+		} while ($stmt->nextRowset());
+			
+		return true;
+	}
+	
+	public $sqlsrvConnection = NULL;
+	public $sqlsrvStatement = NULL;
+	public function SqlSrvMoveNext() {
+		if (!isset($this->sqlsrvConnection)) return false;
+		if (!isset($this->sqlsrvStatement)) return false;
+
+		if (!sqlsrv_fetch($this->sqlsrvStatement)) return false;
+//		if (!sqlsrv_next_result($this->sqlsrvStatement)) return false; // resultset
+//		echo 'a';
+		
+		foreach ($this->columnBindings as $k=>$col) {
+			if ($col[1]) $col[0] = sqlsrv_get_field($this->sqlsrvStatement, $k, SQLSRV_PHPTYPE_STREAM( SQLSRV_ENC_CHAR));
+			else $col[0] = sqlsrv_get_field($this->sqlsrvStatement, $k);
+		}
+		return true;
 	}
 
 	function reset() {
@@ -100,6 +176,7 @@ abstract class sqlSchema extends PDO {
 		$this->setReturn(PDO::PARAM_INT);
 	}
 
+	public static $connections = array();
 	function __construct($options = NULL) {
 		if (!$this->servername)	trigger_error('Please declare protected $servername', E_USER_ERROR);
 		if (!$this->dbname)		trigger_error('Please declare protected $dbname', E_USER_ERROR);
@@ -110,9 +187,23 @@ abstract class sqlSchema extends PDO {
 		$this->setReturn(PDO::PARAM_INT);
 		try {
 			parent::__construct( $dns, $this->username, $this->password,$options);
+			$this->setAttribute( PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION );
 		} catch (Exception $e) {
 			trigger_error($e->getMessage().' '.$dns, E_USER_ERROR);
 			return;
 		}
+		//$this->setAttribute( PDO::SQLSRV_ATTR_ENCODING, PDO::SQLSRV_ENCODING_SYSTEM );
+		
+		self::$connections[] =& $this;
+//		register_shutdown_function('unset',$this);
+	}
+	public static function close_connections() {
+		foreach (self::$connections as $conn) {
+//			if (isset($conn->sqlsrvStatement)) sqlsrv_free_stmt($conn->sqlsrvStatement);
+//			if (isset($conn->sqlsrvConnection)) sqlsrv_close($conn->sqlsrvConnection);
+			unset($conn);
+		}
 	}
 }
+register_shutdown_function('sqlSchema::close_connections');
+?>
