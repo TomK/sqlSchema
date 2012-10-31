@@ -4,7 +4,7 @@ abstract class sqlSchema extends PDO {
 	protected $dbname		= '';
 	protected $username		= '';
 	protected $password		= '';
-	protected $engine		= 'sqlsrv';
+	protected $engine		= 'mysql';
 
 	public $returnValue = null;
 	public $resultSets = array();
@@ -40,16 +40,16 @@ abstract class sqlSchema extends PDO {
 		$this->columnBindings[$column_number] =& $col;
 		return $col;
 	}
-	function call($fnName,$raw = false) {
-		$isSelect = $raw || (strtolower(substr($fnName,0,6))==='select') || (strtolower(substr($fnName,0,4))==='exec') || (strtolower(substr($fnName,0,1))==='{');
-		if ($isSelect && !$raw) $this->setReturn(null);
+	function &call($fnName,$function = false) {
+		if (!$function) $this->setReturn(null);
 		// build function call query
 
 		$paramCount = count($this->params);
 
-		if ($isSelect) {
+		if (!$function) {
 			$qry = $fnName;
 		} else {
+			$qry = '';
 			if (!is_null($this->hasReturn)) $qry = '? = ';
 			$qry .= 'CALL '.$fnName.'(';
 			for ($i = 0; $i < $paramCount; $i++) {
@@ -62,13 +62,14 @@ abstract class sqlSchema extends PDO {
 			$qry = '{'.$qry.'}';
 		}
 
-		try {
+	//	try {
 			if ($this->columnBindings && $this->engine == 'sqlsrv') {
 				return $this->callWithSqlSrv($qry);
 			}
 			return $this->callWithPDO($qry);
-		} catch (Exception $e) {
-			$caller = next(debug_backtrace());
+	/*	} catch (Exception $e) {
+			$backtrace = debug_backtrace();
+			$caller = next($backtrace);
 			//print_r($caller);
 			//echo $e->getMessage();
 			//echo $e->getCode();
@@ -76,9 +77,9 @@ abstract class sqlSchema extends PDO {
 			//echo $caller['line'];
 			echo $e->getMessage();
 			//throw new ErrorException($e->getMessage(), $e->getCode(), 1, $caller['file'], $caller['line'],$e);
-		}
+		}*/
 	}
-	private function callWithSqlSrv($qry) {
+	private function &callWithSqlSrv($qry) {
 //		$serverName = "(local)";
 		$connectionInfo = array( "UID" => $this->username, "PWD" => $this->password, "Database"=>$this->dbname);
 		$conn = sqlsrv_connect( $this->servername, $connectionInfo);
@@ -96,6 +97,7 @@ abstract class sqlSchema extends PDO {
 			throw new Exception(sqlsrv_errors());
 			return false;
 		}
+		return $stmt;
 		
 		if (!sqlsrv_fetch($stmt)) return false;
 		
@@ -110,7 +112,7 @@ abstract class sqlSchema extends PDO {
 		$this->sqlsrvStatement = &$stmt;
 		return true;
 	}
-	private function callWithPDO($qry) {
+	private function &callWithPDO($qry) {
 		// get PDOStatement
 		$stmt = $this->prepare( $qry );
 		if (!$stmt)	{
@@ -126,20 +128,23 @@ abstract class sqlSchema extends PDO {
 		$paramCount = count($this->params);
 		for ($i = 0,$inc = is_null($this->hasReturn)?1:2; $i < $paramCount; $i++) {
 			if ($this->params[$i][3])
-			$stmt->bindParam($i+$inc,$this->params[$i][0],$this->params[$i][1],$this->params[$i][2]);
+				$stmt->bindParam($i+$inc,$this->params[$i][0],$this->params[$i][1],$this->params[$i][2]);
 			else
-			$stmt->bindValue($i+$inc,$this->params[$i][0],$this->params[$i][1]);
+				$stmt->bindValue($i+$inc,$this->params[$i][0],$this->params[$i][1]);
 		}
 
 		// execute statement
-		$stmt->execute();
+		try {
+			$stmt->execute();
+		} catch(Exception $e) {} // allow error handling below to return real error
 		
 		$err = $stmt->errorInfo();
-
 		if ($err && $err[0] !== '00000') {
 			throw new Exception($err[2],$err[1]);
 			return false;
 		}
+		
+		return $stmt;
 		
 		$this->resultSets = array();
 		do {
@@ -173,18 +178,18 @@ abstract class sqlSchema extends PDO {
 		$this->resultSets = array();
 		$this->hasReturn = null;
 		$this->params = array();
-		$this->setReturn(PDO::PARAM_INT);
 	}
 
 	public static $connections = array();
 	function __construct($options = NULL) {
 		if (!$this->servername)	trigger_error('Please declare protected $servername', E_USER_ERROR);
+		if (!$this->port)		trigger_error('Please declare protected $port', E_USER_ERROR);
 		if (!$this->dbname)		trigger_error('Please declare protected $dbname', E_USER_ERROR);
 		if (!$this->username)	trigger_error('Please declare protected $username', E_USER_ERROR);
 		if (!$this->password)	trigger_error('Please declare protected $password', E_USER_ERROR);
 
-		$dns = $this->engine.':server='.$this->servername.";Database=".$this->dbname;
-		$this->setReturn(PDO::PARAM_INT);
+		$dns = $this->engine.':host='.$this->servername.";port=".$this->port.";dbname=".$this->dbname;
+		//$this->setReturn(PDO::PARAM_INT);
 		try {
 			parent::__construct( $dns, $this->username, $this->password,$options);
 			$this->setAttribute( PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION );
@@ -206,4 +211,3 @@ abstract class sqlSchema extends PDO {
 	}
 }
 register_shutdown_function('sqlSchema::close_connections');
-?>
